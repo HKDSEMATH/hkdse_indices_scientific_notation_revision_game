@@ -8,22 +8,27 @@
     <script>
         MathJax = {
             tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] },
-            svg: { fontCache: 'global', linebreaks: { inline: true } }
+            output: { displayOverflow: 'scale', linebreaks: { inline: false } }
         };
     </script>
-    <script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+    <script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-svg.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
     <style>
         body { font-family: 'Inter', sans-serif; }
-        #question-display, .qtext { font-family: 'Times New Roman', Times, serif; }
+        #question-display, #l3-blocks, .qtext { font-family: 'Times New Roman', Times, serif; }
 
         /* Root cause fix: Tailwind preflight sets svg { display: block }, which breaks
            inline MathJax baseline. Keep MathJax SVG inline (its own vertical-align then
            wins). Never set vertical-align: middle !important on mjx-container or its svg. */
         #question-display mjx-container,
-        #l3-area mjx-container { margin: 0 0.25em !important; font-size: 1em !important; }
+        #l3-area mjx-container,
+        #l3-blocks mjx-container,
+        #mc-options mjx-container { margin: 0 0.25em !important; font-size: 1em !important; }
         #question-display mjx-container svg,
-        #l3-area mjx-container svg { display: inline-block !important; }
+        #l3-area mjx-container svg,
+        #l3-blocks mjx-container svg,
+        #mc-options mjx-container svg { display: inline-block !important; }
+        .option-btn mjx-container { display: block; margin-left: auto !important; margin-right: auto !important; }
         .glass-panel {
             background: rgba(30, 41, 59, 0.8);
             backdrop-filter: blur(12px);
@@ -129,6 +134,9 @@
             100% { transform: scale(1); }
         }
         .badge-bounce { animation: badgeBounce 0.6s ease; }
+        /* Canonical MC option box rules (family-wide, do not regress) */
+        #mc-options .option-btn { white-space: normal; overflow-wrap: break-word; word-break: break-word; }
+        #mc-options .option-btn > div { max-width: 100%; }
     </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex items-center justify-center p-4 selection:bg-amber-500 selection:text-white">
@@ -295,7 +303,7 @@
         </div>
     </div>
 
-    <div id="game-screen" class="hidden w-full max-w-3xl flex flex-col gap-4">
+    <div id="game-screen" class="hidden w-full max-w-4xl flex flex-col gap-4">
         
         <div class="flex justify-between items-center bg-slate-800 rounded-full px-6 py-3 shadow-lg border border-slate-700">
             <div class="font-bold text-amber-400" id="level-indicator">Level 1</div>
@@ -310,6 +318,9 @@
                     ⭐ <span id="live-score">0</span>
                 </div>
             </div>
+            <button onclick="skipQuestion()" class="text-slate-500 hover:text-amber-400 transition text-xs font-bold uppercase tracking-wider mr-3">
+                Skip
+            </button>
             <button onclick="quitGame()" class="text-slate-500 hover:text-red-400 transition text-xs font-bold uppercase tracking-wider">
                 Abort
             </button>
@@ -336,7 +347,7 @@
                 </div>
             </div>
 
-            <div id="question-display" class="text-3xl sm:text-4xl text-white mb-6 overflow-x-auto py-6 px-4 text-center min-h-[120px] max-w-full">
+            <div id="question-display" class="text-2xl sm:text-3xl text-white mb-6 py-6 px-4 text-center min-h-[120px] max-w-full">
                 <!-- MathJax renders here -->
             </div>
             
@@ -472,7 +483,7 @@
         const GOOGLE_SCRIPT_URL =
             'https://script.google.com/macros/s/AKfycbxnrhvFWF82ExoHNXqZRRpaUqus0kJs01w51ygs9r1U3dqgS-32TdpQxxgs0Vd7B9w-/exec';
 
-        const APP_VERSION = '6';
+        const APP_VERSION = '7';
         (function watchAppVersion() {
             // GitHub Pages serves this site as .../<repo>/ (index.html). Tolerate
             // every URL shape: no trailing slash, query strings, direct index.html link.
@@ -502,7 +513,7 @@
         let badgeRecords = { level0: false, level1: false, level2: false, level3: false };
         let currentLevel = 1;
         let currentQuestionIndex = 0;
-        let lives = 3;
+        let lives = 5;
         let currentQuestions = [];
         let selectedFormat = 'all'; // 'all', 'mc', 'fill'
         let currentQuestionMode = 'mc'; // state for current specific question
@@ -512,8 +523,9 @@
         
         // --- SCORE BOARD ---
         // Full marks per level, marks deducted per heart lost. Marks accumulate across replays.
-        const NUM_QUESTIONS = 10;
+        const NUM_QUESTIONS = 5;
         const LEVEL3_SETS = 5;
+        const LEVEL_LIVES = { 0: 5, 1: 5, 2: 5, 3: 5 };
         const MARKS = {
             0: { full: 3, perHeart: 1 },
             1: { full: 10, perHeart: 1 },
@@ -1584,7 +1596,7 @@
         function currentAttemptMarks() {
             const cfg = MARKS[currentLevel];
             if (!cfg) return 0;
-            const heartsLost = Math.max(0, 3 - lives);
+            const heartsLost = Math.max(0, LEVEL_LIVES[currentLevel] - lives);
             return Math.max(0, cfg.full - heartsLost * cfg.perHeart);
         }
 
@@ -1613,7 +1625,7 @@
             document.getElementById('level-indicator').className = `font-bold ${levelColors[level]}`;
             document.getElementById('level-indicator').textContent = `Level ${level}`;
 
-            lives = 3;
+            lives = LEVEL_LIVES[level];
             currentQuestionIndex = 0;
             currentQuestions = [];
             currentSets = [];
@@ -1683,7 +1695,7 @@
             for (let i = 0; i < lives; i++) {
                 container.innerHTML += '<span class="heart-bounce">❤️</span>';
             }
-            for (let i = lives; i < 3; i++) {
+            for (let i = lives; i < LEVEL_LIVES[currentLevel]; i++) {
                 container.innerHTML += '<span class="opacity-30 grayscale">❤️</span>';
             }
         }
@@ -1727,7 +1739,7 @@
                 
                 const btns = mcArea.querySelectorAll('button');
                 btns.forEach((btn, idx) => {
-                    btn.innerHTML = q.options[idx];
+                    btn.innerHTML = '<div class="w-full text-center">' + q.options[idx] + '</div>';
                 });
             } else {
                 mcArea.classList.add('hidden');
@@ -1859,13 +1871,13 @@
                 <span class="text-sm font-bold text-emerald-400">Part ${part.partLabel}</span>
                 <span id="l3-status-${pi}" class="${part.done ? 'text-green-400' : 'text-slate-400'} text-sm font-semibold">${part.done ? '✓ Correct' : ''}</span>
             </div>`;
-            inner += `<div id="l3-q-${pi}" class="text-xl sm:text-2xl text-white mb-3 text-center overflow-x-auto px-4 min-h-[40px] leading-relaxed">$ \\text{Simplify } ${part.displayTex} $</div>`;
+            inner += `<div id="l3-q-${pi}" class="text-xl sm:text-2xl text-white mb-3 text-center px-4 min-h-[40px] leading-relaxed">$ \\text{Simplify } ${part.displayTex} $</div>`;
             if (part.done) {
                 inner += `<div class="text-center text-green-400 text-sm py-2 font-semibold">Answer: $ ${part.mcAnswerStr} $</div>`;
             } else if (part.mode === 'mc') {
                 inner += `<div class="grid grid-cols-1 sm:grid-cols-2 gap-3" id="l3-mc-${pi}">`;
                 part.options.forEach((o, bi) => {
-                    inner += `<button onclick="submitSetPartMC(${pi}, ${bi})" class="option-btn bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-xl p-3 text-lg transition-all shadow-md active:scale-95 min-h-[56px] flex items-center justify-center">${o}</button>`;
+                    inner += `<button onclick="submitSetPartMC(${pi}, ${bi})" class="option-btn bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-xl p-3 text-lg transition-all shadow-md active:scale-95 min-h-[56px] flex items-center justify-center"><div class="w-full text-center">${o}</div></button>`;
                 });
                 inner += `</div>`;
             } else {
@@ -2061,6 +2073,48 @@
             saveScores();
             showToast(`Level ${currentLevel} Complete! +${earned} marks earned! 🏆`, "success");
             quitGame();
+        }
+        // Skip the current question/set: no mark or life is lost.
+        function skipQuestion() {
+            if (currentLevel === 3) {
+                const usedTexts = new Set(currentSets.map(s => s.map(p => p.displayTex).join('|')));
+                const usedOpts = new Set(currentSets.map(s => s.map(p => [...p.options].sort().join('~')).join('|')));
+                const usedAns = new Set(currentSets.map(s => s.map(p => p.answerStr).join('|')));
+                let parts = null, tKey = null, oKey = null, aKey = null, tries = 0;
+                do {
+                    parts = MathGen.generateL3Set();
+                    tKey = parts.map(p => p.displayTex).join('|');
+                    oKey = parts.map(p => [...p.options].sort().join('~')).join('|');
+                    aKey = parts.map(p => p.answerStr).join('|');
+                    tries++;
+                } while ((usedTexts.has(tKey) || usedOpts.has(oKey) || usedAns.has(aKey)) && tries < 100);
+                parts.forEach((part, pi) => {
+                    part.setNo = currentSetIndex + 1;
+                    part.partIdx = pi;
+                    part.partLabel = ['(a)', '(b)', '(c)'][pi];
+                    part.paper = 'Paper 1';
+                    part.done = false;
+                    part.mode = (selectedFormat === 'all') ? (Math.random() > 0.5 ? 'mc' : 'fill') : selectedFormat;
+                });
+                currentSets[currentSetIndex] = parts;
+                activePart = null;
+                renderSet();
+                return;
+            }
+
+            const usedTexts = new Set(currentQuestions.map(q => q.text));
+            const usedOpts = new Set(currentQuestions.map(q => [...q.options].sort().join('~')));
+            const usedAns = new Set(currentQuestions.map(q => q.answerStr));
+            let q = null, tKey = null, oKey = null, aKey = null, tries = 0;
+            do {
+                q = (currentLevel === 0) ? MathGen.generateL0() : ((currentLevel === 1) ? MathGen.generateL1() : MathGen.generateL2());
+                tKey = q.text;
+                oKey = [...q.options].sort().join('~');
+                aKey = q.answerStr;
+                tries++;
+            } while ((usedTexts.has(tKey) || usedOpts.has(oKey) || usedAns.has(aKey)) && tries < 300);
+            currentQuestions[currentQuestionIndex] = q;
+            renderQuestion();
         }
 
         function quitGame() {
